@@ -7,10 +7,10 @@ import (
 
 func main() {
 	cfg := database.DatabaseConfig{
-		Host:     "localhost",
+		Host:     "reminder-db",
 		Port:     5432,
-		Username: "root",
-		Password: "nyanyan",
+		Username: "postgres",
+		Password: "123",
 		DBName:   "reminders",
 	}
 

@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  reminder-db:
+    image: postgres:13
+    container_name: reminder-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "123"
+      POSTGRES_DB: reminders
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  reminder-bot:
+    build: .
+    depends_on:
+      reminder-db:
+        condition: service_healthy
