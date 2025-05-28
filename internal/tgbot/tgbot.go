@@ -5,6 +5,7 @@ import (
 	"log"
 	"reminder-bot/internal/database"
 	"reminder-bot/internal/models"
+	"strconv"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -44,16 +45,8 @@ func registerUser(db *database.Database, userName string, chatID int) (models.Us
 	}, nil
 }
 
-func createReminder(db *database.Database, userID int, content string, interval time.Duration) error {
-	err := db.CreateReminder(userID, content, interval)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func getUsersReminders(db *database.Database, userID int) ([]models.Reminder, error) {
-	reminders, err := db.GetReminders(true)
+func getUsersReminders(db *database.Database, userID int, state bool) ([]models.Reminder, error) {
+	reminders, err := db.GetReminders(state)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +72,7 @@ func checkUpdates(db *database.Database, bot *tgbotapi.BotAPI) {
 
 	for update := range updates {
 		if update.Message != nil {
-			reminderCommand, reminderInterval, reminderText, err := parse(update.Message)
+			reminderCommand, err := parse(update.Message)
 
 			if err != nil {
 				log.Printf(err.Error())
@@ -92,42 +85,108 @@ func checkUpdates(db *database.Database, bot *tgbotapi.BotAPI) {
 				continue
 			}
 
-			switch reminderCommand {
-			case "new":
-				{
-					log.Printf("adding reminder")
-					err = createReminder(db, user.ID, reminderText, time.Duration(reminderInterval)*time.Duration(time.Minute))
-					if err != nil {
-						log.Printf(err.Error())
-						continue
-					}
+			reminders, err_ := getUsersReminders(db, user.ID, true)
 
-					SendMessage(fmt.Sprintf("Напоминание будет приходить каждые %s с текстом\n\n%s", time.Duration(reminderInterval)*time.Duration(time.Minute), reminderText),
-						int64(user.ChatID),
-						bot)
+			switch reminderCommand.Command {
+			case "create", "Create":
+				err := db.CreateReminder(user.ID, reminderCommand.Text, time.Duration(reminderCommand.Time)*time.Duration(time.Minute)) // не возвращает ID поэтому невозможно указать ID при отправки сообщения
+				if err != nil {
+					log.Printf(err.Error())
+					continue
 				}
 
-			case "list":
-				{
-					log.Printf("showing the list of reminders")
-					reminders, err := getUsersReminders(db, user.ID)
-					if err != nil {
-						log.Printf(err.Error())
-						continue
-					}
+				SendMessage(fmt.Sprintf("Напоминание будет приходить каждые %s минут с текстом:\n%s", time.Duration(reminderCommand.Time)*time.Duration(time.Minute), reminderCommand.Text),
+					int64(user.ChatID),
+					bot)
 
-					SendList(reminders,
+			case "edit_time", "Edit_time", "edittime", "Edittime":
+				err := db.UpdateInterval(int64(reminderCommand.Id), time.Duration(reminderCommand.Time)*time.Duration(time.Minute))
+				if err != nil {
+					log.Printf(err.Error())
+
+					SendMessage(fmt.Sprintf("Не удалось изменить время для напоминания \n №%d - %s", reminderCommand.Id, reminderCommand.Text),
 						int64(user.ChatID),
 						bot)
+
+					continue
 				}
+
+				SendMessage(fmt.Sprintf("Теперь напоминание №%d будет приходить каждые %s минут", reminderCommand.Id, time.Duration(reminderCommand.Time)*time.Duration(time.Minute)),
+					int64(user.ChatID),
+					bot)
+
+			case "edit_text", "Edit_text", "edittext", "Edittext":
+				err := db.UpdateContent(int64(reminderCommand.Id), reminderCommand.Text)
+				if err != nil {
+					SendMessage(fmt.Sprintf("Не удалось изменить текст для напоминания \n №%d - %s", reminderCommand.Id, reminderCommand.Text),
+						int64(user.ChatID),
+						bot)
+
+					continue
+				}
+
+				SendMessage(fmt.Sprintf("Теперь напоминание №%d будет приходить с текстом:\n%s", reminderCommand.Id, reminderCommand.Text),
+					int64(user.ChatID),
+					bot)
+
+			case "delete", "Delete":
+				err := db.DeleteReminder(int64(reminderCommand.Id))
+				if err != nil {
+					SendMessage(fmt.Sprintf("Не удалось удалить напоминание №%d", reminderCommand.Id),
+						int64(user.ChatID),
+						bot)
+
+					continue
+				}
+
+				SendMessage(fmt.Sprintf("Напоминание №%d удалено", reminderCommand.Id),
+					int64(user.ChatID),
+					bot)
+
+			case "toggle", "Toggle":
+				state, err := strconv.ParseBool(reminderCommand.Text)
+				if err != nil {
+					SendMessage(fmt.Sprintf("Не удалось обработать состояние \"%s\"", reminderCommand.Id, reminderCommand.Text),
+						int64(user.ChatID),
+						bot)
+
+					continue
+				}
+
+				err = db.UpdateActive(int64(reminderCommand.Id), state)
+				if err != nil {
+					log.Printf(err.Error())
+					SendMessage(fmt.Sprintf("Не удалось сменить состояние напоминания №%d", reminderCommand.Id),
+						int64(user.ChatID),
+						bot)
+
+					continue
+				}
+
+				SendMessage(fmt.Sprintf("Состояние напоминания №%d изменено на %s", reminderCommand.Id, reminderCommand.Text),
+					int64(user.ChatID),
+					bot)
+
+			case "list", "List":
+				var reminders_ []models.Reminder
+				reminders_, err_ = getUsersReminders(db, user.ID, false)
+				if err_ != nil {
+					log.Printf(err.Error())
+					SendMessage(fmt.Sprintf("Не удалось создать список напоминаний"),
+						int64(user.ChatID),
+						bot)
+					continue
+				}
+
+				combined := make([]models.Reminder, len(reminders)+len(reminders_))
+
+				copy(combined, reminders)
+				copy(combined[len(reminders):], reminders_)
+
+				SendList(combined,
+					int64(user.ChatID),
+					bot)
 			}
-
-			//log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
-
-			//msg := tgbotapi.NewMessage(update.Message.Chat.ID, update.Message.Text)
-			//msg.ReplyToMessageID = update.Message.MessageID
-
-			//bot.Send(msg)
 		}
 	}
 }

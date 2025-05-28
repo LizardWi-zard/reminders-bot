@@ -57,8 +57,22 @@ func SendRemind(db *database.Database, bot *tgbotapi.BotAPI) {
 
 func SendList(reminders []models.Reminder, userID int64, bot *tgbotapi.BotAPI) {
 	var builder strings.Builder
-	for _, rereminder := range reminders {
-		line := fmt.Sprintf("%d - %s каждые %s ", rereminder.ID, rereminder.Content, rereminder.Interval)
+	var isActive string
+	if len(reminders) == 0 {
+		msg := tgbotapi.NewMessage(userID, "Ваш список напоминаний пуст")
+		bot.Send(msg)
+
+		return
+	}
+
+	for _, reminder := range reminders {
+		if reminder.IsActive {
+			isActive = "✓"
+		} else {
+			isActive = "✗"
+		}
+
+		line := fmt.Sprintf("№%d - \"%s\" каждые %s | %s\n", reminder.ID, reminder.Content, reminder.Interval, isActive)
 		builder.WriteString(line)
 	}
 

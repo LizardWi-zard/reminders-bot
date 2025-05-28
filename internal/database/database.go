@@ -3,9 +3,10 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	_ "github.com/lib/pq"
 	"reminder-bot/internal/models"
 	"time"
+
+	_ "github.com/lib/pq"
 )
 
 type DatabaseConfig struct {
@@ -127,7 +128,7 @@ func (d *Database) GetUser(userName string, chatID int) (models.User, error) {
 }
 
 func (d *Database) GetReminders(isActive bool) ([]models.Reminder, error) {
-	rows, err := d.db.Query("select id, user_id, content, (extract(epoch from interval) / 60)::int as \"interval_minutes\", last_checked from reminders where is_active = $1", isActive)
+	rows, err := d.db.Query("select id, user_id, content, (extract(epoch from interval) / 60)::int as \"interval_minutes\", is_active, last_checked from reminders where is_active = $1", isActive)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +141,7 @@ func (d *Database) GetReminders(isActive bool) ([]models.Reminder, error) {
 		var reminder models.Reminder
 
 		var minutes int
-		err = rows.Scan(&reminder.ID, &reminder.UserID, &reminder.Content, &minutes, &reminder.LastChecked)
+		err = rows.Scan(&reminder.ID, &reminder.UserID, &reminder.Content, &minutes, &reminder.IsActive, &reminder.LastChecked)
 		if err != nil {
 			return nil, err
 		}
